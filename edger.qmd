@@ -1,0 +1,187 @@
+---
+title: "RNA-Seq workflow: gene-level exploratory analysis and differential expression"
+format: html
+editor: visual
+---
+
+## Introduction
+
+```{r}
+library(airway)
+library(edgeR)
+```
+
+## Preparing count matrices
+
+```{r}
+data("airway")
+se <- airway
+se$dex <- relevel(se$dex, "untrt")
+```
+
+```{r}
+y <- DGEList(
+    counts = assay(se, "counts"), 
+    samples = colData(se), 
+    genes = rowData(se)
+)
+```
+
+## Exploratory analysis and visualization
+
+### Pre-filtering the dataset
+
+Remove rows of the *DESeqDataSet* that have no counts, or only a single count across all samples:
+
+```{r}
+filterByExpr(y)
+```
+
+### Normalization for composition bias
+
+```{r}
+y <- calcNormFactors(y)
+```
+
+### Sample distances
+
+### PCA plot
+
+```{r}
+plotPCA(rld, intgroup = c("dex", "cell"))
+```
+
+### MDS plot
+
+```{r}
+
+```
+
+## Differential expression analysis
+
+### Testing for differential expression
+
+Construct matrix of custom contrasts:
+
+```{r}
+contrasts.matrix <- makeContrasts(B.lactating-B.pregnant, levels=design)
+
+contrasts.labels <- colnames(contrasts.matrix)
+
+contrasts.length <- length(contrasts.labels)
+```
+
+Conduct gene-wise statistical tests for a given contrast:
+
+```{r}
+results <- vector(mode = "list", length = ncol(contrasts))
+
+for (label in contrasts.labels) {
+    
+    results[[contrast]] <- glmQLFTest(fit, contrasts = contrast, lfc = log2(1.5))
+    
+}
+```
+
+## Plotting results
+
+### P
+
+```{r}
+x <- res$`N061011-N61311`
+
+breaks <- seq(0, 1, by = 0.05)
+
+hist(x$pvalue[x$baseMean > 1], breaks = breaks)
+```
+
+### Gene clustering
+
+## Pathway analysis
+
+### Gene ontology analysis
+
+Test for over-representation of GO terms:
+
+```{r}
+goana(tr, species = "Hs")
+```
+
+### KEGG pathway analysis
+
+Test for over-representation of KEGG pathways:
+
+```{r}
+kegga(tr, species = "Hs")
+```
+
+## Annotating and exporting results
+
+```{r}
+FUN <- function(x) {
+    
+    x <- data.frame(x)
+    
+    x <- data.frame(
+        name           = rownames(x),
+        baseMean       = x$baseMean,
+        baseMeanA      = "",
+        baseMeanB      = "",
+        foldChange     = 2 ^ x$log2FoldChange,
+        log2FoldChange = x$log2FoldChange,
+        PValue         = x$pvalue,
+        PAdj           = p.adjust(x$pvalue, method = "hochberg"),
+        FDR            = x$padj
+    )
+    
+    x <- x[with(x, order(PValue, -foldChange)), ]
+    x$falsePos = round(1:nrow(x) * x$FDR, digits = 0)
+    
+    x
+}
+
+out <- lapply(res, FUN)
+```
+
+Write results table(s) to disk:
+
+```{r}
+for (contrast in contrasts) {
+    
+    x <- res[[contrast]]
+    
+    file <- paste(contrast, "tsv", sep = ".")
+    
+    write.table(x, file, quote = FALSE, sep = "\t", col.names = NA)
+
+}
+```
+
+Write counts matrix to disk:
+
+```{r}
+counts <- counts(dds)
+write.table(counts, file = "counts.tsv", quote = FALSE, sep = "\t", col.names = NA)
+```
+
+Write normalized counts matrix to disk:
+
+```{r}
+normcounts <- counts(dds, normalized = TRUE)
+write.table(normcounts, file = "normcounts.tsv", quote = FALSE, sep = "\t", col.names = NA)
+```
+
+Write log normalized counts matrix to disk:
+
+```{r}
+logcounts <- assay(rld)
+write.table(logcounts, file = "logcounts.tsv", quote = FALSE, sep = "\t", col.names = NA)
+```
+
+## Session information
+
+Report the version numbers of R and all the packages used in this session:
+
+```{r}
+sessionInfo()
+```

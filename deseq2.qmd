@@ -1,0 +1,365 @@
+---
+title: "RNA-Seq workflow: gene-level exploratory analysis and differential expression"
+format: html
+editor: visual
+---
+
+## Packages
+
+Restore project dependencies:
+
+```{r}
+#| message: false
+#| warning: false
+
+renv::restore()
+```
+
+Load Bioconductor packages:
+
+```{r}
+#| message: false
+#| warning: false
+
+library(DESeq2)
+```
+
+Load CRAN packages:
+
+```{r}
+#| message: false
+#| warning: false
+
+library(DT)
+library(RColorBrewer)
+
+library(ggplot2)
+library(hues)
+library(pheatmap)
+```
+
+Load GitHub packages:
+
+```{r}
+#| message: false
+#| warning: false
+```
+
+## Input
+
+Read experiment data:
+
+```{r}
+counts <- read.table("data/counts.tsv")
+
+samples <- read.table("data/samples.tsv")
+```
+
+Define condition and batch:
+
+```{r}
+samples$condition <- factor(samples$dex)
+
+samples$batch <- factor(samples$cell)
+```
+
+Construct colour palettes:
+
+```{r}
+condition.palette <- iwanthue(nlevels(samples$condition))
+
+names(condition.palette) <- levels(samples$condition)
+```
+
+## Data
+
+Create a *DESeqDataSet* object:
+
+```{r}
+dds <- DESeqDataSetFromMatrix(
+    countData = counts, 
+    colData = samples, 
+    design = ~ 0 + condition + batch
+)
+```
+
+## Exploratory analysis and visualization
+
+### Pre-filtering the dataset
+
+Remove rows of the *DESeqDataSet* that have no counts, or only a single count across all samples:
+
+```{r}
+dds <- dds[ rowSums(counts(dds)) > 1, ]
+```
+
+### The rlog transformation
+
+```{r}
+rld <- rlog(dds, blind = FALSE)
+```
+
+### Sample distances
+
+```{r}
+#| fig.width: 7
+#| fig.height: 7
+#| eval: false
+
+dist.values <- dist(t(assay(rld)))
+
+dist.matrix <- as.matrix(dist)
+
+dist.colors <- colorRampPalette(rev(brewer.pal(n = 9, name = "Blues")))(100)
+
+dist.breaks <- seq(0, max(dist.values), length = 100)
+
+pheatmap(
+    mat = dist.matrix,
+    color = dist.colors,
+    breaks = dist.breaks,
+    clustering_distance_rows = dist.values,
+    clustering_distance_cols = dist.values,
+    annotation_row = data.frame(condition = dds$condition, row.names = colnames(dds)),
+    annotation_colors = list(condition = condition.palette)
+)
+```
+
+### PCA plot
+
+```{r}
+#| eval: false
+
+plotPCA(rld, intgroup = c("condition", "batch"))
+```
+
+### MDS plot
+
+Compute the MDS for the distances calculated from the *rlog* transformed counts:
+
+```{r}
+#| eval: false
+
+mds.mat <- cmdscale(dist.matrix)
+
+colnames(mds.mat) <- c("MDS.1", "MDS.2")
+
+mds.dat <- as.data.frame(mds.mat)
+
+mds.dat <- cbind(mds.dat, colData(dds))
+
+ggplot(mds.dat, aes(MDS.1, MDS.2, color = condition, shape = batch)) + 
+    geom_point() + 
+    scale_colour_manual(values = condition.palette) + 
+    theme_bw()
+```
+
+## Differential expression analysis
+
+### Running the differential expression pipeline
+
+Run the differential expression pipeline on the raw counts:
+
+```{r}
+dds <- DESeq(dds)
+```
+
+### Building the results table
+
+```{r}
+contrasts <- list(
+    "trt-untrt" = c("condition", "trt", "untrt")
+)
+```
+
+```{r}
+res <- mapply(results, contrast = contrasts, MoreArgs = list(object = dds))
+```
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+for (name in names(contrasts)) {
+    
+    cat("####", name, "\n")
+    
+    df <- as.data.frame(res[[name]])
+    
+    dt <- datatable(
+        data = df, 
+        options = list(
+            dom = "Bfrtip", 
+            buttons = c("copy", "csv", "excel", "pdf", "print")
+        ),
+        class = "cell-border stripe", 
+        filter = "top", 
+        extensions = "Buttons"
+    )
+    
+    knitr::knit_print(dt)
+    
+    cat("\n\n") 
+    
+}
+```
+
+:::
+
+
+
+
+
+## Plotting results
+
+
+### Volcano
+
+Plot
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+for (name in names(contrasts)) {
+    
+    cat("####", name, "\n")
+    
+    x <- as.data.frame(res[[name]])
+    
+    p <- ggplot(x, aes(log2FoldChange, -log10(pvalue))) + geom_point()
+    
+    print(p)
+    
+    cat("\n\n") 
+    
+}
+```
+
+:::
+
+### PValue
+
+Plot histogram of p-values for each contrast:
+
+::: panel-tabset
+
+```{r}
+#| results: "asis"
+
+for (name in names(contrasts)) {
+    
+    cat("####", name, "\n")
+    
+    x <- as.data.frame(res[[name]])
+    
+    p <- ggplot(x, aes(pvalue)) + geom_histogram()
+    
+    print(p)
+    
+    cat("\n\n") 
+    
+}
+```
+
+:::
+
+<!-- ### Gene clustering -->
+
+<!-- ## Annotating and exporting results -->
+
+<!-- ```{r} -->
+
+<!-- FUN <- function(x) { -->
+
+<!--     x <- data.frame(x) -->
+
+<!--     x <- data.frame( -->
+
+<!--         name           = rownames(x), -->
+
+<!--         baseMean       = x$baseMean, -->
+
+<!--         baseMeanA      = "", -->
+
+<!--         baseMeanB      = "", -->
+
+<!--         foldChange     = 2 ^ x$log2FoldChange, -->
+
+<!--         log2FoldChange = x$log2FoldChange, -->
+
+<!--         PValue         = x$pvalue, -->
+
+<!--         PAdj           = p.adjust(x$pvalue, method = "hochberg"), -->
+
+<!--         FDR            = x$padj -->
+
+<!--     ) -->
+
+<!--     x <- x[with(x, order(PValue, -foldChange)), ] -->
+
+<!--     x$falsePos = round(1:nrow(x) * x$FDR, digits = 0) -->
+
+<!--     x -->
+
+<!-- } -->
+
+<!-- out <- lapply(res, FUN) -->
+
+<!-- ``` -->
+
+<!-- Write results table(s) to disk: -->
+
+<!-- ```{r} -->
+
+<!-- for (contrast in contrasts) { -->
+
+<!--     x <- res[[contrast]] -->
+
+<!--     file <- paste(contrast, "tsv", sep = ".") -->
+
+<!--     write.table(x, file, quote = FALSE, sep = "\t", col.names = NA) -->
+
+<!-- } -->
+
+<!-- ``` -->
+
+<!-- Write counts matrix to disk: -->
+
+<!-- ```{r} -->
+
+<!-- counts <- counts(dds) -->
+
+<!-- write.table(counts, file = "deseq2/counts.tsv", quote = FALSE, sep = "\t", col.names = NA) -->
+
+<!-- ``` -->
+
+<!-- Write normalized counts matrix to disk: -->
+
+<!-- ```{r} -->
+
+<!-- normcounts <- counts(dds, normalized = TRUE) -->
+
+<!-- write.table(normcounts, file = "deseq2/normcounts.tsv", quote = FALSE, sep = "\t", col.names = NA) -->
+
+<!-- ``` -->
+
+<!-- Write log normalized counts matrix to disk: -->
+
+<!-- ```{r} -->
+
+<!-- logcounts <- assay(rld) -->
+
+<!-- write.table(logcounts, file = "deseq2/logcounts.tsv", quote = FALSE, sep = "\t", col.names = NA) -->
+
+<!-- ``` -->
+
+## Session
+
+Report the version numbers of R and all the packages used in this session:
+
+```{r}
+sessionInfo()
+```

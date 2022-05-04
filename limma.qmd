@@ -1,0 +1,68 @@
+---
+title: "RNA-Seq workflow: gene-level exploratory analysis and differential expression"
+format: html
+editor: visual
+---
+
+Load Bioconductor package(s):
+
+```{r}
+library(airway)
+library(DESeq2)
+```
+
+Load CRAN package(s):
+
+```{r}
+```
+
+Load GitHub package(s):
+
+```{r}
+
+```
+
+## Differential expression analysis
+
+```{r}
+contrasts <- makeContrasts(
+    
+)
+```
+
+Transform data ready for linear modelling:
+
+```{r}
+v <- voom(x, design, plot = TRUE)
+```
+
+
+```{r}
+vfit <- lmFit(v, design)
+vfit <- contrasts.fit(vfit, contrasts=contr.matrix)
+efit <- eBayes(vfit)
+```
+
+Plot residual standard deviation versus average log expression:
+
+```{r}
+plotSA(efit)
+```
+
+```{r}
+
+```
+
+## Pathway analysis
+
+### Gene ontology analysis
+
+### KEGG pathway analysis
+
+
+
+
+
+
+
+
